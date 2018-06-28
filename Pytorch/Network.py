@@ -54,16 +54,16 @@ class Decoder(nn.Module):
     def __init__(self, in_channel, out_channel, mode):
         super(Decoder, self).__init__()
         self.bn_en = nn.BatchNorm2d(in_channel)
-        self.conv1 = nn.Conv2d(2*in_channel, in_channel, kernel_size=3, padding=1)      # not specified in paper
+        self.conv1 = nn.Conv2d(2 * in_channel, in_channel, kernel_size=3, padding=1)  # not specified in paper
         if mode == 'G':
             self.picanet = PiCANet_G()
         elif mode == 'L':
             self.picanet = PiCANet_L()
         else:
             assert 0
-        self.conv2 = nn.Conv2d(2*in_channel, out_channel, kernel_size=3, padding=1)     # not specified in paper
+        self.conv2 = nn.Conv2d(2 * in_channel, out_channel, kernel_size=3, padding=1)  # not specified in paper
         self.bn_feature = nn.BatchNorm2d(out_channel)
-        self.conv3 = nn.Conv2d(out_channel, 1, kernel_size=1, padding=0)    # not specified in paper
+        self.conv3 = nn.Conv2d(out_channel, 1, kernel_size=1, padding=0)  # not specified in paper
 
     def forward(self, *input):
         assert len(input) <= 2
@@ -74,14 +74,14 @@ class Decoder(nn.Module):
             En = input[0]
             Dec = input[1]
 
-        if Dec.size()[2]*2 == En.size()[2]:
+        if Dec.size()[2] * 2 == En.size()[2]:
             Dec = F.upsample(Dec, scale_factor=2, mode='bilinear', align_corners=True)
         elif Dec.size()[2] != En.size()[2]:
             assert 0
         En = self.bn_en(En)
         En = F.relu(En)
-        x = torch.cat((En, Dec), dim=1)     # F
-        x = self.picanet(x)                 # F_att
+        x = torch.cat((En, Dec), dim=1)  # F
+        x = self.picanet(x)  # F_att
         x = self.conv2(x)
         x = self.bn_feature(x)
         Dec_out = F.relu(x)
@@ -100,15 +100,47 @@ class PiCANet_G(nn.Module):
 
 
 class PiCANet_L(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channel):
         super(PiCANet_L, self).__init__()
+        self.conv1 = nn.Conv2d(in_channel, 128, kernel_size=7, dilation=2, padding=6)
+        self.conv2 = nn.Conv2d(128, 49, kernel_size=1)
 
     def forward(self, *input):
+        x = input[0]
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = F.softmax(x, 1)
+        size = x.size()
+        x = torch.reshape(x, (size[0], size[1], size[2] * size[3]))
+        x = torch.transpose(x, 1, 2)
+        x = torch.reshape(x, (size[0], size[2] * size[3], 7, 7))
         pass
 
 
+class Renet(nn.Module):
+    def __init__(self, width, out_channel):
+        super(Renet, self).__init__()
+        self.vertical = nn.LSTM(input_size=width, hidden_size=256, batch_first=True,
+                                bidirectional=True)  # each row
+        self.horizontal = nn.LSTM(input_size=512, hidden_size=256, batch_first=True,
+                                  bidirectional=True)  # each column
+        # self.conv = nn.Conv2d(1, out_channel, 1)
+        self.fc = nn.Linear(512*512, 10)
 
-if __name__=='__main__':
+    def forward(self, *input):
+        x = input[0]
+        size = x.size()
+        x = torch.squeeze(x, 1)
+        x, _ = self.vertical(x)
+        size = x.size()     # batch, H, 512
+        x = torch.transpose(x, 1, 2)
+        x, _ = self.vertical(x)    # batch, 512, 512
+        x = torch.reshape(x, (size[0], -1))
+        x = self.fc(x)
+        return x
+
+
+if __name__ == '__main__':
     vgg = torchvision.models.vgg16(pretrained=True)
     model = Encoder()
     model.seq.load_state_dict(vgg.features.state_dict())
