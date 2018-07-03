@@ -50,9 +50,9 @@ class Encoder(nn.Module):
         return conv1, conv2, conv3, conv4, conv5, conv7
 
 
-class Decoder(nn.Module):
+class DecoderCell(nn.Module):
     def __init__(self, in_channel, out_channel, mode):
-        super(Decoder, self).__init__()
+        super(DecoderCell, self).__init__()
         self.bn_en = nn.BatchNorm2d(in_channel)
         self.conv1 = nn.Conv2d(2 * in_channel, in_channel, kernel_size=3, padding=1)  # not specified in paper
         if mode == 'G':
@@ -80,8 +80,9 @@ class Decoder(nn.Module):
             assert 0
         En = self.bn_en(En)
         En = F.relu(En)
-        x = torch.cat((En, Dec), dim=1)  # F
-        x = self.picanet(x)  # F_att
+        fmap = torch.cat((En, Dec), dim=1)  # F
+        fmap_att = self.picanet(fmap)  # F_att
+        x = torch.cat((fmap, fmap_att), 1)
         x = self.conv2(x)
         x = self.bn_feature(x)
         Dec_out = F.relu(x)
@@ -92,11 +93,21 @@ class Decoder(nn.Module):
 
 
 class PiCANet_G(nn.Module):
-    def __init__(self):
+    def __init__(self, size, in_channel, out_channel):
         super(PiCANet_G, self).__init__()
+        self.renet = Renet(size, in_channel, out_channel)
+        self.in_channel = in_channel
 
     def forward(self, *input):
-        pass
+        x = input[0]
+        size = x.size()
+        kernel = self.renet(x)
+        kernel = F.softmax(kernel, 1)
+        kernel = torch.reshape(kernel, (size[0] * size[2] * size[3], 1, 1, 10, 10))
+        x = torch.unsqueeze(x, 0)
+        x = F.conv3d(input=x, weight=kernel, bais=None, stride=1, padding=0, dilation=(1, 3, 3), groups=self.in_channel)
+        x = torch.reshape(x, (size[0], size[1], size[2], size[3]))
+        return x
 
 
 class PiCANet_L(nn.Module):
@@ -107,35 +118,52 @@ class PiCANet_L(nn.Module):
 
     def forward(self, *input):
         x = input[0]
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = F.softmax(x, 1)
         size = x.size()
-        x = torch.reshape(x, (size[0], size[1], size[2] * size[3]))
-        x = torch.transpose(x, 1, 2)
-        x = torch.reshape(x, (size[0], size[2] * size[3], 7, 7))
-        pass
+        kernel = self.conv1(x)
+        kernel = self.conv2(kernel)
+        kernel = F.softmax(kernel, 1)
+        kernel = torch.reshape(kernel, (size[0], 1, 1, 7, 7, size[2], size[3]))
+        fmap = []
+        x = F.pad(x, (6, 6, 6, 6))
+        x = torch.unsqueeze(0)
+        for i in range(size[2]):
+            for j in range(size[3]):
+                pix = F.conv3d(input=F.pad(x, (6-i, -6-i, 6-j, -6-j)), weight=kernel[:, :, :, :, :, i, j], dilation=(1, 2, 2), groups=size[1])
+                fmap.append(pix)
+        x = torch.cat(fmap, 3)
+        x = torch.reshape(x, (size[0], size[1], size[2], size[3]))
+        return x
 
 
 class Renet(nn.Module):
-    def __init__(self, width, out_channel):
+    def __init__(self, size, in_channel, out_channel):
         super(Renet, self).__init__()
-        self.vertical = nn.LSTM(input_size=width, hidden_size=256, batch_first=True,
+        self.size = size
+        self.in_channel = in_channel
+        self.out_channel = out_channel
+        self.vertical = nn.LSTM(input_size=in_channel, hidden_size=256, batch_first=True,
                                 bidirectional=True)  # each row
         self.horizontal = nn.LSTM(input_size=512, hidden_size=256, batch_first=True,
                                   bidirectional=True)  # each column
         # self.conv = nn.Conv2d(1, out_channel, 1)
-        self.fc = nn.Linear(512*512, 10)
+        self.fc = nn.Linear(512 * size * size, 10)
 
     def forward(self, *input):
         x = input[0]
-        size = x.size()
-        x = torch.squeeze(x, 1)
-        x, _ = self.vertical(x)
-        size = x.size()     # batch, H, 512
-        x = torch.transpose(x, 1, 2)
-        x, _ = self.vertical(x)    # batch, 512, 512
-        x = torch.reshape(x, (size[0], -1))
+        temp = []
+        size = x.size()  # batch, in_channel, height, width
+        x = torch.transpose(x, 1, 3)  # batch, width, height, in_channel
+        for i in range(self.size):
+            h, _ = self.vertical(x[:, :, i, :])
+            temp.append(h)  # batch, width, 512
+        x = torch.stack(temp, dim=2)  # batch, width, height, 512
+        temp = []
+        for i in range(self.size):
+            h, _ = self.horizontal(x[:, i, :, :])
+            temp.append(h)  # batch, width, 512
+        x = torch.stack(temp, dim=3)  # batch, height, 512, width
+        x = torch.transpose(x, 1, 2)  # batch, 512, height, width
+        x = torch.reshape(x, (-1, 512 * self.size * self.size))
         x = self.fc(x)
         return x
 

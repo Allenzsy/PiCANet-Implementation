@@ -14,7 +14,7 @@ dataloader = Data.DataLoader(
         transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))
     ])), batch_size=32, shuffle=True, )
 device = torch.device("cuda")
-model = net.Renet(28, 10).to(device)
+model = net.Renet(28, 28, 1, 0).to(device)
 optimizer = torch.optim.Adam(params=model.parameters(), lr=0.0001)
 writer = SummaryWriter('log')
 for i in range(1000):
@@ -29,7 +29,8 @@ for i in range(1000):
         loss.backward()
         optimizer.step()
         # total_loss += loss
-        writer.add_scalar('loss', loss, i*1874+index)
+        writer.add_scalar('loss', loss, i * 1874 + index)
         print("Epoch : {}, Batch Index : {}\n".format(i, index))
         print("loss : {}\n".format(loss))
-    print(torch.argmax(pred, 1), target)
+        print("Accuracy : ")
+        print(float(torch.sum(torch.eq(torch.argmax(pred, 1), target)).data) / 32.0)
