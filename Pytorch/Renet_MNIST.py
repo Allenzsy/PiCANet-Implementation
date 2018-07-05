@@ -14,7 +14,7 @@ dataloader = Data.DataLoader(
         transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))
     ])), batch_size=32, shuffle=True, )
 device = torch.device("cuda")
-model = net.Renet(28, 28, 1, 0).to(device)
+model = net.Renet(28, 1, 0).to(device)
 optimizer = torch.optim.Adam(params=model.parameters(), lr=0.0001)
 writer = SummaryWriter('log')
 for i in range(1000):
