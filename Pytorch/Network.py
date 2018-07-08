@@ -253,9 +253,9 @@ if __name__ == '__main__':
     print('Time: {}'.format(time.clock()))
     for i in range(1000):
         opt.zero_grad()
+        time_spend = time.clock()
         _, loss = model(noise, target)
-        time.sleep(5)
-        torch.cuda.empty_cache()
+        print('Time_Spend: {}'.format(time.clock() - time_spend))
         loss.backward()
         opt.step()
         print(float(loss))
