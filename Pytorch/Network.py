@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import torchvision
 import time
 
-
 cfg = {'PicaNet': "GGLLL",
        'Size': [28, 28, 28, 56, 112, 224],
        'Channel': [1024, 512, 512, 256, 128, 64],
@@ -36,14 +35,13 @@ class Unet(nn.Module):
         Dec = None
         pred = []
         for i in range(6):
-            print(En_out[5-i].size())
+            # print(En_out[5 - i].size())
             Dec, _pred = self.decoder[i](En_out[5 - i], Dec)
             pred.append(_pred)
         loss = 0
         for i in range(6):
-            loss += F.binary_cross_entropy(pred[5-i], tar) * self.cfg['loss_ratio'][5-i]
-            loss += 1
-            print(loss)
+            loss += F.binary_cross_entropy(pred[5 - i], tar) * self.cfg['loss_ratio'][5 - i]
+            # print(float(loss))
             if tar.size()[2] > 28:
                 tar = F.max_pool2d(tar, 2, 2)
         return Dec, loss
@@ -153,10 +151,12 @@ class PiCANet_G(nn.Module):
         kernel = self.renet(x)
         kernel = F.softmax(kernel, 1)
         # print(kernel.size())
-        kernel = torch.reshape(kernel, (size[0] * size[2] * size[3], 1, 1, 10, 10))
+        kernel = kernel.reshape(size[0] * size[2] * size[3], 1, 1, 10, 10)
         x = torch.unsqueeze(x, 0)
         x = F.conv3d(input=x, weight=kernel, bias=None, stride=1, padding=0, dilation=(1, 3, 3), groups=size[0])
+        # print(torch.cuda.memory_allocated() / 1024 / 1024)
         x = torch.reshape(x, (size[0], size[1], size[2], size[3]))
+        # print(torch.cuda.memory_allocated() / 1024 / 1024)
         return x
 
 
@@ -172,17 +172,28 @@ class PiCANet_L(nn.Module):
         kernel = self.conv1(x)
         kernel = self.conv2(kernel)
         kernel = F.softmax(kernel, 1)
-        kernel = torch.reshape(kernel, (size[0], 1, 1, 7, 7, size[2], size[3]))
-        fmap = []
-        x = torch.unsqueeze(x, 0)
+        kernel = torch.reshape(kernel, (size[0] * size[2] * size[3], 1, 1, 7, 7))
+        # fmap = []
+        # x = torch.unsqueeze(x, 0)
+        x = F.pad(x, (6, 6, 6, 6))
+        # print(torch.cuda.memory_allocated() / 1024 / 1024)
+        patch = x.unfold(2, 13, 1).unfold(3, 13, 1).contiguous().view(1, -1, size[1], 13, 13)
+        # print(torch.cuda.memory_allocated() / 1024 / 1024)
+        x = F.conv3d(input=patch, weight=kernel, bias=None, stride=1, padding=0, dilation=(1, 2, 2),
+                     groups=size[0] * size[2] * size[3])
+        x = x.view(size[0], size[1], size[2], size[3])
+        """
         for i in range(size[2]):
             for j in range(size[3]):
+                print(torch.cuda.memory_allocated() / 1024 / 1024)
                 pix = F.conv3d(input=F.pad(x, (6 - j, 7 + j - size[3], 6 - i, 7 + i - size[2])),
                                weight=kernel[:, :, :, :, :, i, j],
                                dilation=(1, 2, 2), groups=size[0])
+                print(torch.cuda.memory_allocated() / 1024 / 1024)
                 fmap.append(pix)
         x = torch.cat(fmap, 3)
         x = torch.reshape(x, (size[0], size[1], size[2], size[3]))
+        """
         return x
 
 
@@ -227,8 +238,9 @@ if __name__ == '__main__':
     # print(vgg.features.state_dict().keys())
     # print(vgg.features)
     device = torch.device("cuda")
-    noise = torch.randn((3, 3, 224, 224)).type(torch.cuda.FloatTensor)
-    target = torch.randn((3, 1, 224, 224)).type(torch.cuda.FloatTensor)
+    batch_size = 1
+    noise = torch.randn((batch_size, 3, 224, 224)).type(torch.cuda.FloatTensor)
+    target = torch.randn((batch_size, 1, 224, 224)).type(torch.cuda.FloatTensor)
 
     # print(vgg.features(noise))
     # print(model(noise))
@@ -238,11 +250,14 @@ if __name__ == '__main__':
     model = Unet(cfg).cuda()
     model.encoder.seq.load_state_dict(vgg.features.state_dict())
     opt = torch.optim.Adam(model.parameters(), lr=0.001)
-    print(time.clock())
+    print('Time: {}'.format(time.clock()))
     for i in range(1000):
         opt.zero_grad()
         _, loss = model(noise, target)
+        time.sleep(5)
+        torch.cuda.empty_cache()
         loss.backward()
         opt.step()
-        print(loss)
-        print(time.clock())
+        print(float(loss))
+        print('Time: {}'.format(time.clock()))
+
