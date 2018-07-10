@@ -29,8 +29,11 @@ if __name__ == '__main__':
     # print(F.mse_loss(model.seq[:8](noise), vgg.features[:8](noise)))
     model = Unet(cfg).cuda()
     model.encoder.seq.load_state_dict(vgg.features.state_dict())
-    opt_en = torch.optim.SGD(model.encoder.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0005)
-    opt_dec = torch.optim.SGD(model.decoder.parameters(), lr=0.01, momentum=0.9, weight_decay=0.0005)
+    learning_rate = 0.001
+    lr_decay = 0.1
+    decay_step = 7000
+    opt_en = torch.optim.SGD(model.encoder.parameters(), lr=learning_rate, momentum=0.9, weight_decay=0.0005)
+    opt_dec = torch.optim.SGD(model.decoder.parameters(), lr=learning_rate * 10, momentum=0.9, weight_decay=0.0005)
     dataloader = DataLoader(dataset, batch_size)
     now = datetime.datetime.now()
     os.makedirs('log/{}'.format(now.strftime('%m%d%H%M')), exist_ok=True)
@@ -42,11 +45,15 @@ if __name__ == '__main__':
             opt_en.zero_grad()
             img = batch['image'].to(device)
             mask = batch['mask'].to(device)
-            _, loss = model(img, mask)
+            pred, loss = model(img, mask)
             loss.backward()
             opt_dec.step()
             opt_en.step()
             writer.add_scalar('loss', float(loss), global_step= i + epo*len(dataloader))
+            if i % 10 == 0:
+                for masked in pred:
+                    writer.add_image('{}'.format(masked.size()[2]), masked, i)
+                writer.add_image('target', img, i)
             if i % 1000 == 0:
                 os.makedirs('models/{}'.format(now.strftime('%m%d%H%M')), exist_ok=True)
                 torch.save(model, 'models/{}/{}epo_{}step.ckpt'.format(now.strftime('%m%d%H%M'), epo, i))

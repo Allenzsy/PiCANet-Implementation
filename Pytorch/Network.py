@@ -47,7 +47,7 @@ class Unet(nn.Module):
             # print(float(loss))
             if tar.size()[2] > 28:
                 tar = F.max_pool2d(tar, 2, 2)
-        return Dec, loss
+        return pred, loss
 
 
 def make_layers(cfg, in_channels):

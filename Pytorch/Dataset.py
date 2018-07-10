@@ -13,11 +13,12 @@ class RandomCrop(object):
 
     def __call__(self, sample):
         img, mask = sample['image'], sample['mask']
+        img, mask = img.resize((256, 256), resample=Image.BILINEAR), mask.resize((256, 256), resample=Image.BILINEAR)
         h, w = img.size
         new_h, new_w = self.size, self.size
 
-        top = np.random.randint(0, h-new_h)
-        left = np.random.randint(0, w-new_w)
+        top = np.random.randint(0, h - new_h)
+        left = np.random.randint(0, w - new_w)
         img = img.crop((left, top, left + new_w, top + new_h))
         mask = mask.crop((left, top, left + new_w, top + new_h))
 
