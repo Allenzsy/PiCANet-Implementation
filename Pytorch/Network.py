@@ -1,8 +1,11 @@
+# -*- coding: utf-8 -*-
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import time
+
 
 cfg = {'PicaNet': "GGLLL",
        'Size': [28, 28, 28, 56, 112, 224],
@@ -14,7 +17,7 @@ class Unet(nn.Module):
     def __init__(self, cfg):
         super(Unet, self).__init__()
         self.encoder = Encoder()
-        self.decoder = []
+        self.decoder = nn.ModuleList()
         self.cfg = cfg
         for i in range(5):
             assert cfg['PicaNet'][i] == 'G' or cfg['PicaNet'][i] == 'L'
@@ -251,6 +254,9 @@ if __name__ == '__main__':
     model.encoder.seq.load_state_dict(vgg.features.state_dict())
     opt = torch.optim.Adam(model.parameters(), lr=0.001)
     print('Time: {}'.format(time.clock()))
+    _, loss = model(noise, target)
+    loss.backward()
+    """
     for i in range(1000):
         opt.zero_grad()
         time_spend = time.clock()
@@ -258,6 +264,8 @@ if __name__ == '__main__':
         print('Time_Spend: {}'.format(time.clock() - time_spend))
         loss.backward()
         opt.step()
+
         print(float(loss))
         print('Time: {}'.format(time.clock()))
+    """
 

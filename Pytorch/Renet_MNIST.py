@@ -16,7 +16,7 @@ dataloader = Data.DataLoader(
 device = torch.device("cuda")
 model = net.Renet(28, 1, 0).to(device)
 optimizer = torch.optim.Adam(params=model.parameters(), lr=0.0001)
-writer = SummaryWriter('log')
+writer = SummaryWriter('log_Renet')
 for i in range(1000):
     # total_loss = 0
     for index, (data, target) in enumerate(dataloader):
